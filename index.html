@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>元素周期表 推理ゲーム</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+
+<div class="max-w-2xl mx-auto p-4">
+  <h1 class="text-3xl font-bold text-center text-indigo-400 mb-1">元素 Wordle</h1>
+  <p class="text-center text-gray-400 text-sm mb-4">ヒントから元素を当てよう！最大5回の挑戦</p>
+
+  <div class="flex gap-3 justify-center mb-4 flex-wrap">
+    <div class="bg-gray-800 rounded-lg px-4 py-2 text-center">
+      <div class="text-xs text-gray-400">ストリーク</div>
+      <div id="streak" class="text-2xl font-bold text-yellow-300">0</div>
+    </div>
+    <div class="bg-gray-800 rounded-lg px-4 py-2 text-center">
+      <div class="text-xs text-gray-400">最高ストリーク</div>
+      <div id="best-streak" class="text-2xl font-bold text-green-300">0</div>
+    </div>
+    <div class="bg-gray-800 rounded-lg px-4 py-2 text-center">
+      <div class="text-xs text-gray-400">難易度</div>
+      <select id="difficulty" onchange="newGame()" class="bg-gray-700 text-gray-100 text-sm rounded px-2 py-1">
+        <option value="easy">かんたん</option>
+        <option value="normal" selected>ふつう</option>
+        <option value="hard">むずかしい</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- ヒント表示エリア -->
+  <div id="hint-area" class="bg-gray-800 rounded-xl p-4 mb-4">
+    <div class="text-sm text-cyan-400 font-bold mb-3">ヒント</div>
+    <div id="hints" class="space-y-2"></div>
+  </div>
+
+  <!-- 推測入力 -->
+  <div id="guess-area" class="mb-4">
+    <div class="text-sm text-gray-400 mb-2">元素名または記号を入力:</div>
+    <div class="flex gap-2">
+      <input id="guess-input" type="text" placeholder="例: 水素 / H"
+        class="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-gray-100 focus:outline-none focus:border-indigo-400"
+        onkeydown="if(event.key==='Enter')submitGuess()">
+      <button onclick="submitGuess()" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg">推測</button>
+    </div>
+    <div id="error-msg" class="text-red-400 text-xs mt-1 hidden"></div>
+  </div>
+
+  <!-- 候補リスト（かんたんモード） -->
+  <div id="candidate-area" class="mb-4 hidden">
+    <div class="text-sm text-gray-400 mb-2">元素候補:</div>
+    <div id="candidates" class="flex flex-wrap gap-1"></div>
+  </div>
+
+  <!-- 推測履歴 -->
+  <div id="guess-history" class="space-y-2 mb-4"></div>
+
+  <!-- 結果 -->
+  <div id="result-area" class="hidden bg-gray-800 rounded-xl p-4 mb-4 text-center">
+    <div id="result-title" class="text-2xl font-bold mb-2"></div>
+    <div id="result-detail" class="text-gray-300 text-sm"></div>
+    <button onclick="newGame()" class="mt-3 bg-indigo-600 hover:bg-indigo-500 px-6 py-2 rounded-lg">次の元素</button>
+  </div>
+
+  <!-- 周期表参照 -->
+  <details class="bg-gray-800 rounded-xl p-4">
+    <summary class="cursor-pointer text-indigo-400 font-bold">周期表参照 ▼</summary>
+    <div id="periodic-table" class="mt-3 overflow-x-auto"></div>
+  </details>
+</div>
+
+<script>
+function escapeHtml(str){return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
+
+// 元素データベース（主要元素）
+const ELEMENTS = [
+  {n:1,sym:'H',name:'水素',period:1,group:1,type:'非金属',weight:1.008},
+  {n:2,sym:'He',name:'ヘリウム',period:1,group:18,type:'希ガス',weight:4.003},
+  {n:3,sym:'Li',name:'リチウム',period:2,group:1,type:'アルカリ金属',weight:6.941},
+  {n:4,sym:'Be',name:'ベリリウム',period:2,group:2,type:'アルカリ土類金属',weight:9.012},
+  {n:5,sym:'B',name:'ホウ素',period:2,group:13,type:'半金属',weight:10.81},
+  {n:6,sym:'C',name:'炭素',period:2,group:14,type:'非金属',weight:12.01},
+  {n:7,sym:'N',name:'窒素',period:2,group:15,type:'非金属',weight:14.01},
+  {n:8,sym:'O',name:'酸素',period:2,group:16,type:'非金属',weight:16.00},
+  {n:9,sym:'F',name:'フッ素',period:2,group:17,type:'ハロゲン',weight:19.00},
+  {n:10,sym:'Ne',name:'ネオン',period:2,group:18,type:'希ガス',weight:20.18},
+  {n:11,sym:'Na',name:'ナトリウム',period:3,group:1,type:'アルカリ金属',weight:22.99},
+  {n:12,sym:'Mg',name:'マグネシウム',period:3,group:2,type:'アルカリ土類金属',weight:24.31},
+  {n:13,sym:'Al',name:'アルミニウム',period:3,group:13,type:'金属',weight:26.98},
+  {n:14,sym:'Si',name:'ケイ素',period:3,group:14,type:'半金属',weight:28.09},
+  {n:15,sym:'P',name:'リン',period:3,group:15,type:'非金属',weight:30.97},
+  {n:16,sym:'S',name:'硫黄',period:3,group:16,type:'非金属',weight:32.07},
+  {n:17,sym:'Cl',name:'塩素',period:3,group:17,type:'ハロゲン',weight:35.45},
+  {n:18,sym:'Ar',name:'アルゴン',period:3,group:18,type:'希ガス',weight:39.95},
+  {n:19,sym:'K',name:'カリウム',period:4,group:1,type:'アルカリ金属',weight:39.10},
+  {n:20,sym:'Ca',name:'カルシウム',period:4,group:2,type:'アルカリ土類金属',weight:40.08},
+  {n:24,sym:'Cr',name:'クロム',period:4,group:6,type:'遷移金属',weight:52.00},
+  {n:25,sym:'Mn',name:'マンガン',period:4,group:7,type:'遷移金属',weight:54.94},
+  {n:26,sym:'Fe',name:'鉄',period:4,group:8,type:'遷移金属',weight:55.85},
+  {n:27,sym:'Co',name:'コバルト',period:4,group:9,type:'遷移金属',weight:58.93},
+  {n:28,sym:'Ni',name:'ニッケル',period:4,group:10,type:'遷移金属',weight:58.69},
+  {n:29,sym:'Cu',name:'銅',period:4,group:11,type:'遷移金属',weight:63.55},
+  {n:30,sym:'Zn',name:'亜鉛',period:4,group:12,type:'遷移金属',weight:65.38},
+  {n:33,sym:'As',name:'ヒ素',period:4,group:15,type:'半金属',weight:74.92},
+  {n:35,sym:'Br',name:'臭素',period:4,group:17,type:'ハロゲン',weight:79.90},
+  {n:36,sym:'Kr',name:'クリプトン',period:4,group:18,type:'希ガス',weight:83.80},
+  {n:42,sym:'Mo',name:'モリブデン',period:5,group:6,type:'遷移金属',weight:95.96},
+  {n:47,sym:'Ag',name:'銀',period:5,group:11,type:'遷移金属',weight:107.87},
+  {n:50,sym:'Sn',name:'スズ',period:5,group:14,type:'金属',weight:118.71},
+  {n:53,sym:'I',name:'ヨウ素',period:5,group:17,type:'ハロゲン',weight:126.90},
+  {n:54,sym:'Xe',name:'キセノン',period:5,group:18,type:'希ガス',weight:131.29},
+  {n:56,sym:'Ba',name:'バリウム',period:6,group:2,type:'アルカリ土類金属',weight:137.33},
+  {n:74,sym:'W',name:'タングステン',period:6,group:6,type:'遷移金属',weight:183.84},
+  {n:78,sym:'Pt',name:'白金',period:6,group:10,type:'遷移金属',weight:195.08},
+  {n:79,sym:'Au',name:'金',period:6,group:11,type:'遷移金属',weight:196.97},
+  {n:80,sym:'Hg',name:'水銀',period:6,group:12,type:'遷移金属',weight:200.59},
+  {n:82,sym:'Pb',name:'鉛',period:6,group:14,type:'金属',weight:207.20},
+  {n:86,sym:'Rn',name:'ラドン',period:6,group:18,type:'希ガス',weight:222},
+  {n:88,sym:'Ra',name:'ラジウム',period:7,group:2,type:'アルカリ土類金属',weight:226},
+  {n:92,sym:'U',name:'ウラン',period:7,group:3,type:'アクチノイド',weight:238.03},
+  {n:94,sym:'Pu',name:'プルトニウム',period:7,group:3,type:'アクチノイド',weight:244},
+];
+
+// ゲーム状態
+let target, guessCount, maxGuesses, gameOver, streak, bestStreak;
+let revealedHints = [];
+
+function loadStats() {
+  const s = JSON.parse(localStorage.getItem('element-wordle-stats')||'{"streak":0,"best":0}');
+  streak = s.streak; bestStreak = s.best;
+  document.getElementById('streak').textContent = streak;
+  document.getElementById('best-streak').textContent = bestStreak;
+}
+function saveStats() {
+  localStorage.setItem('element-wordle-stats', JSON.stringify({streak, best: bestStreak}));
+  document.getElementById('streak').textContent = streak;
+  document.getElementById('best-streak').textContent = bestStreak;
+}
+
+function newGame() {
+  const diff = document.getElementById('difficulty').value;
+  maxGuesses = diff === 'hard' ? 5 : 5;
+
+  // 難易度に応じた元素選択
+  let pool;
+  if(diff === 'easy') pool = ELEMENTS.filter(e => e.n <= 20);
+  else if(diff === 'normal') pool = ELEMENTS.filter(e => e.n <= 54);
+  else pool = ELEMENTS;
+
+  target = pool[Math.floor(Math.random() * pool.length)];
+  guessCount = 0;
+  gameOver = false;
+  revealedHints = [];
+
+  document.getElementById('result-area').classList.add('hidden');
+  document.getElementById('guess-history').innerHTML = '';
+  document.getElementById('guess-input').value = '';
+  document.getElementById('error-msg').classList.add('hidden');
+
+  // 難易度によって候補を表示
+  const candidateArea = document.getElementById('candidate-area');
+  if(diff === 'easy') {
+    candidateArea.classList.remove('hidden');
+    renderCandidates(pool);
+  } else {
+    candidateArea.classList.add('hidden');
+  }
+
+  generateHints();
+  renderHints();
+}
+
+function generateHints() {
+  const diff = document.getElementById('difficulty').value;
+  const hints = [];
+  // 周期
+  hints.push({label:'周期', value: `${target.period}周期`});
+  // 族
+  hints.push({label:'族', value: `第${target.group}族`});
+  // 種別
+  hints.push({label:'種類', value: target.type});
+  // 原子番号ヒント（範囲）
+  const lo = Math.floor(target.n/10)*10;
+  const hi = lo + 9;
+  hints.push({label:'原子番号の範囲', value: `${lo}〜${hi}`});
+  // 原子量
+  if(diff !== 'easy') {
+    hints.push({label:'原子量（概算）', value: `約${Math.round(target.weight)}`});
+  }
+  // 記号ヒント（最初の文字）
+  hints.push({label:'記号の最初の文字', value: target.sym[0]});
+
+  revealedHints = hints;
+}
+
+function renderHints() {
+  const diff = document.getElementById('difficulty').value;
+  const showCount = diff === 'hard' ? Math.min(2 + guessCount, revealedHints.length) : revealedHints.length;
+  const hintsEl = document.getElementById('hints');
+  hintsEl.innerHTML = '';
+  for(let i=0; i<revealedHints.length; i++) {
+    const h = revealedHints[i];
+    const show = i < showCount;
+    const div = document.createElement('div');
+    div.className = 'flex gap-2 items-center';
+    div.innerHTML = `<span class="text-xs text-gray-500 w-28">${escapeHtml(h.label)}:</span>
+      <span class="text-sm font-bold ${show?'text-yellow-300':'text-gray-700 bg-gray-700 rounded'}">${show ? escapeHtml(h.value) : '???'}</span>`;
+    hintsEl.appendChild(div);
+  }
+}
+
+function renderCandidates(pool) {
+  const el = document.getElementById('candidates');
+  el.innerHTML = '';
+  pool.forEach(e => {
+    const btn = document.createElement('button');
+    btn.className = 'bg-gray-700 hover:bg-indigo-700 border border-gray-600 px-2 py-1 rounded text-xs';
+    btn.textContent = e.name;
+    btn.onclick = () => { document.getElementById('guess-input').value = e.name; };
+    el.appendChild(btn);
+  });
+}
+
+function submitGuess() {
+  if(gameOver) return;
+  const input = document.getElementById('guess-input').value.trim();
+  if(!input) return;
+
+  // 入力を検索
+  const guessed = ELEMENTS.find(e =>
+    e.name === input || e.sym.toUpperCase() === input.toUpperCase() ||
+    e.name.toLowerCase() === input.toLowerCase()
+  );
+
+  const errEl = document.getElementById('error-msg');
+  if(!guessed) {
+    errEl.textContent = '元素が見つかりません。元素名または記号を入力してください。';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  errEl.classList.add('hidden');
+
+  guessCount++;
+  document.getElementById('guess-input').value = '';
+
+  // 結果判定
+  const isCorrect = guessed.n === target.n;
+
+  // 履歴追加
+  const hist = document.getElementById('guess-history');
+  const div = document.createElement('div');
+  div.className = `p-3 rounded-lg border ${isCorrect ? 'border-green-500 bg-green-900/30' : 'border-gray-600 bg-gray-800'}`;
+
+  if(isCorrect) {
+    div.innerHTML = `<div class="text-green-400 font-bold">✓ ${escapeHtml(guessed.name)} (${escapeHtml(guessed.sym)}) - 正解！</div>`;
+  } else {
+    const nDiff = guessed.n - target.n;
+    const nHint = nDiff > 0 ? '↓ もっと小さい' : '↑ もっと大きい';
+    div.innerHTML = `<div class="text-red-400 font-bold">✗ ${escapeHtml(guessed.name)} (${escapeHtml(guessed.sym)})</div>
+      <div class="text-xs text-gray-400 mt-1">
+        原子番号: ${escapeHtml(String(guessed.n))} ${nHint} | 周期: ${guessed.period===target.period?'<span class="text-green-400">✓</span>':'✗'} | 族: ${guessed.group===target.group?'<span class="text-green-400">✓</span>':'✗'} | 種類: ${guessed.type===target.type?'<span class="text-green-400">✓</span>':'✗'}
+      </div>`;
+  }
+  hist.appendChild(div);
+
+  // ハードモードは間違いでもヒント解放
+  if(!isCorrect) renderHints();
+
+  if(isCorrect) {
+    gameOver = true;
+    streak++;
+    if(streak > bestStreak) bestStreak = streak;
+    saveStats();
+    showResult(true);
+  } else if(guessCount >= maxGuesses) {
+    gameOver = true;
+    streak = 0;
+    saveStats();
+    showResult(false);
+  }
+}
+
+function showResult(win) {
+  const ra = document.getElementById('result-area');
+  ra.classList.remove('hidden');
+  document.getElementById('result-title').innerHTML = win
+    ? `<span class="text-green-400">正解！ 🎉</span>`
+    : `<span class="text-red-400">残念...</span>`;
+  document.getElementById('result-detail').textContent =
+    `正解: ${target.name} (${target.sym}) - 原子番号${target.n} - ${target.type} - ${target.period}周期 第${target.group}族`;
+}
+
+// 周期表レンダリング（簡易版）
+function renderPeriodicTable() {
+  const el = document.getElementById('periodic-table');
+  const typeColors = {
+    'アルカリ金属':'bg-red-900','アルカリ土類金属':'bg-orange-900','遷移金属':'bg-yellow-900',
+    '金属':'bg-green-900','半金属':'bg-teal-900','非金属':'bg-blue-900',
+    'ハロゲン':'bg-purple-900','希ガス':'bg-pink-900','アクチノイド':'bg-gray-700'
+  };
+  el.innerHTML = '<div class="flex flex-wrap gap-1">' +
+    ELEMENTS.map(e => `<div class="w-10 h-10 rounded text-center flex flex-col items-center justify-center cursor-pointer text-xs ${typeColors[e.type]||'bg-gray-700'}" title="${escapeHtml(e.name)} (${e.n})">
+      <div class="font-bold text-xs">${escapeHtml(e.sym)}</div>
+      <div style="font-size:8px" class="text-gray-300">${e.n}</div>
+    </div>`).join('') + '</div>';
+}
+
+loadStats();
+newGame();
+renderPeriodicTable();
+</script>
+</body>
+</html>
